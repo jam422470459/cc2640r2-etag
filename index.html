@@ -1670,25 +1670,470 @@
         <button onclick="rotateCanvas(90)">顺时针旋转90°</button>
         <button onclick="rotateCanvas(-90)">逆时针旋转90°</button>
       </div>
+<button onclick="toggleTodoPanel()">待办事项编辑</button>
+<button onclick="toggleSchedulePanel()">课程表编辑</button>
+
+<div id="todo-box" style="margin:12px 0; padding:10px; border:1px dashed #999; background:#f8f8f8; display:none;"></div>
+      <!-- <div id="todo-box" style="margin:12px 0; padding:10px; border:1px dashed #999; background:#f8f8f8;"> -->
+        <div style="font-weight:bold; margin-bottom:8px;">待办事项</div>
+        
+        <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+          <input id="todo-input" type="text" maxlength="64" placeholder="输入待办事项" style="min-width:220px; padding:4px;">
+          <button type="button" onclick="addTodoItem()">添加</button>
+          <button type="button" onclick="clearTodoItems()">清空</button>
+          <button type="button" onclick="renderTodoListToCanvas()">渲染到画布</button>
+        </div>
+        <ul id="todo-list" style="margin:8px 0 0; padding-left:20px;"></ul>
+      </div>
       <input id="edit-font"
         style="max-width: 250; position: absolute; border: black solid 1px;background-color: rgba(0,0,0,0);display: none;overflow: auto" />
-      <canvas id="canvas" width="250" height="122" style="border: black solid 1px;"></canvas>
+      <canvas id="canvas" width="300" height="400" style="border: black solid 1px;"></canvas>
       <br>
       <button onclick="doUploadImage('full')">确认上传</button>
       <br>
     </div>
   </div>
 
+<!-- <div id="schedule-box" style="margin:12px 0; padding:10px; border:1px dashed #333; background:#f0f8ff;"> -->
+  <div id="schedule-box" style="margin:12px 0; padding:10px; border:1px dashed #333; background:#f0f8ff; display:none;"></div>
+  <div style="font-weight:bold; margin-bottom:8px;">一周课程表</div>
+  <!-- 星期多选复选框 -->
+  <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:10px;">
+    <label><input type="checkbox" class="weekCheck" value="0"> 周一</label>
+    <label><input type="checkbox" class="weekCheck" value="1"> 周二</label>
+    <label><input type="checkbox" class="weekCheck" value="2"> 周三</label>
+    <label><input type="checkbox" class="weekCheck" value="3"> 周四</label>
+    <label><input type="checkbox" class="weekCheck" value="4"> 周五</label>
+    <label><input type="checkbox" class="weekCheck" value="5"> 周六</label>
+    <label><input type="checkbox" class="weekCheck" value="6"> 周日</label>
+  </div>
+  <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px;">
+    <input id="classInput" type="text" maxlength="40" placeholder="输入课程名称" style="min-width:240px; padding:4px;">
+    <input id="classIndex" type="number" min="1" max="12" value="1" placeholder="节次">
+    <button type="button" onclick="addClassItem()">添加选中星期课程</button>
+    <button type="button" onclick="clearAllSchedule()">清空全部课程</button>
+    <button type="button" onclick="renderScheduleToCanvas()">渲染整周课表到画布</button>
+  </div>
+  <ul id="schedule-list" style="margin:8px 0 0; padding-left:20px;"></ul>
+</div>
+
   <div id="log">
     CC2640R2-ETAG Webtool. <br>
   </div>
   <script>etagFnEnable(false);</script>
   <script>
+    const TODO_STORAGE_KEY = 'etag_todo_items';
+    // const TODO_CANVAS_WIDTH = 296;
+    // const TODO_CANVAS_HEIGHT = 128;
+
+    function escapeHtml(value) {
+      return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
+    }
+
+    function getTodoItems() {
+      try {
+        const saved = localStorage.getItem(TODO_STORAGE_KEY);
+        return saved ? JSON.parse(saved) : [];
+      } catch (error) {
+        console.warn('读取待办事项失败', error);
+        return [];
+      }
+    }
+
+    function saveTodoItems(items) {
+      try {
+        localStorage.setItem(TODO_STORAGE_KEY, JSON.stringify(items));
+      } catch (error) {
+        console.warn('保存待办事项失败', error);
+      }
+    }
+
+    function renderTodoListUI() {
+      const list = document.getElementById('todo-list');
+      const items = getTodoItems();
+      list.innerHTML = '';
+
+      if (!items.length) {
+        const emptyItem = document.createElement('li');
+        emptyItem.textContent = '暂无待办事项';
+        emptyItem.style.color = '#888';
+        list.appendChild(emptyItem);
+        return;
+      }
+
+      items.forEach((item, index) => {
+        const li = document.createElement('li');
+        li.style.margin = '4px 0';
+        li.innerHTML = `
+          <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+            <input type="checkbox" ${item.done ? 'checked' : ''} onchange="toggleTodoItem(${index})">
+            <span style="${item.done ? 'text-decoration: line-through; color:#666;' : ''}">${escapeHtml(item.text)}</span>
+          </label>
+        `;
+        list.appendChild(li);
+      });
+    }
+
+    function addTodoItem() {
+      const input = document.getElementById('todo-input');
+      const text = input.value.trim();
+      if (!text) {
+        alert('请输入待办事项');
+        return;
+      }
+
+      const items = getTodoItems();
+      items.push({ text, done: false });
+      saveTodoItems(items);
+      input.value = '';
+      renderTodoListUI();
+      renderTodoListToCanvas();
+    }
+
+    function toggleTodoItem(index) {
+      const items = getTodoItems();
+      if (!items[index]) return;
+      items[index].done = !items[index].done;
+      saveTodoItems(items);
+      renderTodoListUI();
+      renderTodoListToCanvas();
+    }
+
+    function clearTodoItems() {
+      saveTodoItems([]);
+      renderTodoListUI();
+      renderTodoListToCanvas();
+    }
+
+    function wrapTodoText(ctx, text, maxWidth) {
+      const words = text.split(/\s+/);
+      const lines = [];
+      let current = '';
+
+      words.forEach((word) => {
+        const test = current ? `${current} ${word}` : word;
+        if (ctx.measureText(test).width > maxWidth && current) {
+          lines.push(current);
+          current = word;
+        } else {
+          current = test;
+        }
+      });
+
+      if (current) {
+        lines.push(current);
+      }
+
+      return lines.length ? lines : [''];
+    }
+
+
+// 面板显示状态标记
+let todoPanelShow = false;
+let schedulePanelShow = false;
+
+// 切换待办面板显示/隐藏
+function toggleTodoPanel() {
+    todoPanelShow = !todoPanelShow;
+    const box = document.getElementById('todo-box');
+    box.style.display = todoPanelShow ? 'block' : 'none';
+    // 打开时自动渲染一次画布
+    if (todoPanelShow) {
+        renderTodoListToCanvas();
+    }
+}
+
+// 切换课程表面板显示/隐藏
+function toggleSchedulePanel() {
+    schedulePanelShow = !schedulePanelShow;
+    const box = document.getElementById('schedule-box');
+    box.style.display = schedulePanelShow ? 'block' : 'none';
+    if (schedulePanelShow) {
+        renderScheduleToCanvas();
+    }
+}
+
+
+
+
+
+function renderTodoListToCanvas() {
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  // 读取当前选中屏幕对应的画布真实尺寸，不再固定
+  const cw = canvas.width;
+  const ch = canvas.height;
+
+  // 清空画布，使用真实宽高
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, cw, ch);
+
+  // 标题
+  ctx.fillStyle = 'black';
+  ctx.font = 'bold 20px 黑体';
+  ctx.fillText('待办事项', 24, 34);
+ // ========== 新增：绘制当前日期 ==========
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  ctx.font = '14px 黑体';
+  ctx.fillStyle = '#666';
+  // 标题右侧留出间距
+  ctx.fillText(dateStr, 120, 34);
+  // ======================================
+  // 边框适配当前画布宽高
+  ctx.strokeStyle = '#999';
+  const padding = 18;
+  ctx.strokeRect(padding, 46, cw - padding * 2, ch - 64);
+
+  const items = getTodoItems();
+  if (!items.length) {
+    ctx.font = '16px 黑体';
+    ctx.fillStyle = '#888';
+    ctx.fillText('暂无待办事项', padding + 16, 90);
+    return;
+  }
+
+  const startY = 82;
+  const lineHeight = 24;
+  // 文字最大宽度跟随画布自适应
+  const maxTextWidth = cw - padding * 2 - 60;
+
+  items.forEach((item, index) => {
+    const y = startY + index * lineHeight * 1.2;
+    if (y > ch - 40) return;
+
+    ctx.fillStyle = item.done ? 'red' : 'black';
+    ctx.fillRect(padding + 16, y - 12, 14, 14);
+    if (item.done) {
+      ctx.fillStyle = 'black';
+      ctx.fillText('✓', padding + 16, y);
+    }
+
+    const lines = wrapTodoText(ctx, item.text, maxTextWidth);
+    ctx.fillStyle = item.done ? 'red' : 'black';
+    ctx.font = '16px 黑体';
+    lines.slice(0, 3).forEach((line, lineIndex) => {
+      ctx.fillText(line, padding + 38, y + lineIndex * 18);
+    });
+    if (lines.length > 3) {
+      ctx.fillStyle = 'black';
+      ctx.fillText('…', padding + 38, y + 3 * 18);
+    }
+  });
+}
+
+const SCHEDULE_STORAGE_KEY = 'etag_schedule_data';
+const WEEK_NAMES = ["周一","周二","周三","周四","周五","周六","周日"];
+
+// 获取全部课程数据 {0:[周一],1:[周二]...6:[周日]}
+function getScheduleData() {
+  try {
+    const saved = localStorage.getItem(SCHEDULE_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
+  }catch(e){
+    console.warn("读取课程表失败",e);
+    return {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
+  }
+}
+function saveScheduleData(data) {
+  try {
+    localStorage.setItem(SCHEDULE_STORAGE_KEY, JSON.stringify(data));
+  }catch(e){
+    console.warn("保存课程表失败",e);
+  }
+}
+
+// 获取当前勾选的星期下标数组
+function getCheckedWeekIndexes() {
+  const boxes = document.querySelectorAll(".weekCheck:checked");
+  return Array.from(boxes).map(cb => parseInt(cb.value));
+}
+
+// 刷新课程列表UI（展示所有星期课程）
+function renderScheduleUI() {
+  const list = document.getElementById("schedule-list");
+  const allData = getScheduleData();
+  list.innerHTML = "";
+  let hasData = false;
+  for(let w=0;w<7;w++){
+    const weekCourses = allData[w];
+    if(weekCourses.length === 0) continue;
+    hasData = true;
+    // 星期标题
+    const weekTitle = document.createElement("li");
+    weekTitle.style.fontWeight = "bold";
+    weekTitle.style.marginTop = "6px";
+    weekTitle.textContent = WEEK_NAMES[w];
+    list.appendChild(weekTitle);
+    weekCourses.sort((a,b)=>a.index - b.index);
+    weekCourses.forEach((item,i)=>{
+      const li = document.createElement("li");
+      li.style.margin="3px 0";
+      li.innerHTML = `第${item.index}节：${escapeHtml(item.text)} 
+        <button onclick="delClassItem(${w},${i})">删除</button>`;
+      list.appendChild(li);
+    })
+  }
+  if(!hasData){
+    const emptyLi = document.createElement("li");
+    emptyLi.style.color="#777";
+    emptyLi.textContent = "暂无任何课程，请勾选星期后添加";
+    list.appendChild(emptyLi);
+  }
+}
+
+// 添加课程：给所有勾选的星期批量添加/覆盖同节次课程
+function addClassItem() {
+  const selectedWeeks = getCheckedWeekIndexes();
+  if(selectedWeeks.length === 0){
+    alert("请至少勾选一个星期");
+    return;
+  }
+  const text = document.getElementById("classInput").value.trim();
+  const index = parseInt(document.getElementById("classIndex").value);
+  if(!text){
+    alert("请输入课程名称");
+    return;
+  }
+  if(isNaN(index) || index<1 || index>12){
+    alert("节次范围1~12");
+    return;
+  }
+  const allData = getScheduleData();
+  selectedWeeks.forEach(wIdx=>{
+    const weekArr = allData[wIdx];
+    const exist = weekArr.findIndex(c=>c.index === index);
+    if(exist >=0){
+      weekArr[exist].text = text;
+    }else{
+      weekArr.push({index, text});
+    }
+  })
+  saveScheduleData(allData);
+  document.getElementById("classInput").value = "";
+  renderScheduleUI();
+  renderScheduleToCanvas();
+}
+
+// 删除指定星期、指定序号课程
+function delClassItem(weekIdx, itemIdx) {
+  const allData = getScheduleData();
+  allData[weekIdx].splice(itemIdx,1);
+  saveScheduleData(allData);
+  renderScheduleUI();
+  renderScheduleToCanvas();
+}
+
+// 清空全部星期课程
+function clearAllSchedule() {
+  if(!confirm("确定清空整周所有课程？")) return;
+  const empty = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
+  saveScheduleData(empty);
+  renderScheduleUI();
+  renderScheduleToCanvas();
+}
+
+// 渲染整周课程表到Canvas（自适应画布尺寸）
+function renderScheduleToCanvas() {
+  const canvas = document.getElementById("canvas");
+  const ctx = canvas.getContext("2d");
+  const cw = canvas.width;
+  const ch = canvas.height;
+  const allData = getScheduleData();
+  // 白底清空
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0,0,cw,ch);
+  // 大标题
+  ctx.fillStyle = "#000";
+  ctx.font = "bold 22px 黑体";
+  ctx.fillText("一周课程表", 20, 36);
+
+  // 表格基础参数
+  const pad = 12;
+  const tableTop = 52;
+  const rowH = 28;
+  const colCount = 8; // 节次 + 周一到周日
+  const colW = (cw - pad*2) / colCount;
+  const maxPeriod = Math.min(12, Math.floor((ch - tableTop - pad)/rowH));
+
+  // ========== 绘制表头：节次 | 周一 周二 周三 周四 周五 周六 周日 ==========
+  ctx.fillStyle = "#eee";
+  ctx.fillRect(pad, tableTop, colW, rowH);
+  for(let w=0;w<7;w++){
+    ctx.fillRect(pad + colW*(w+1), tableTop, colW, rowH);
+  }
+  // 表头边框
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 1;
+  for(let i=0;i<colCount;i++){
+    ctx.strokeRect(pad + colW*i, tableTop, colW, rowH);
+  }
+  // 表头文字
+  ctx.fillStyle = "#000";
+  ctx.font = "bold 14px 黑体";
+  ctx.fillText("节次", pad+6, tableTop+20);
+  for(let w=0;w<7;w++){
+    ctx.fillText(WEEK_NAMES[w], pad + colW*(w+1)+6, tableTop+20);
+  }
+
+  // ========== 逐行绘制1~maxPeriod节次 ==========
+  ctx.font = "12px 黑体";
+  for(let p=0;p<maxPeriod;p++){
+    const y = tableTop + rowH*(p+1);
+    const periodNum = p+1;
+    // 绘制整行单元格边框
+    for(let i=0;i<colCount;i++){
+      ctx.strokeRect(pad + colW*i, y, colW, rowH);
+    }
+    // 第一列：节次数字
+    ctx.fillText(periodNum.toString(), pad+10, y+18);
+    // 周一到周日填充课程
+    for(let w=0;w<7;w++){
+      const course = allData[w].find(c=>c.index === periodNum);
+      const cellX = pad + colW*(w+1) + 6;
+      if(course){
+        const lines = wrapTodoText(ctx, course.text, colW - 12);
+        lines.slice(0,2).forEach((line,li)=>{
+          ctx.fillText(line, cellX, y + 16 + li*14);
+        })
+      }
+    }
+  }
+}
+
+// 勾选框切换时自动刷新列表+画布
+document.querySelectorAll(".weekCheck").forEach(box=>{
+  box.addEventListener("change",()=>{
+    renderScheduleUI();
+    renderScheduleToCanvas();
+  })
+});
+
+
+
+
+
+
+
     document.body.onload = () => {
       const canvas = document.getElementById('canvas');
       const ctx = canvas.getContext("2d");
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      document.getElementById('todo-input').addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          addTodoItem();
+        }
+      });
+
+      renderTodoListUI();
+      renderTodoListToCanvas();
 
       let is_allow_drawing = false;
       let is_allow_move_editor = false;
@@ -1698,6 +2143,7 @@
       const editor = document.getElementById('edit-font');
       const font = document.getElementById('font');
       document.getElementById('dithering').value = 'bwr_Atkinson';
+      document.getElementById('screensize').value = '300*400';
       image_mode.value = 'paint';
       paint_color.value = 'black';
       font.value = '黑体';
@@ -1761,6 +2207,10 @@
           console.log('重新加载图像');
           update_image();
         }
+
+  // 新增：切换尺寸后自动刷新待办渲染，适配新画布大小
+  renderTodoListToCanvas();
+
       }
 
       image_mode.onchange = function (e) {

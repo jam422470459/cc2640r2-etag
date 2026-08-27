@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+	<meta charset="utf-8">
+	<meta http-equiv="content-type" content="text/html; charset=utf-8">
+	<title>电子价签蓝牙控制器</title>
+	<style>
+		#tool-box>* {
+			margin-right: 5px;
+		}
+
+		* {
+			padding: 0;
+			margin: 0;
+		}
+
+		button,
+		a {
+			padding: 2px;
+			margin: 2px;
+			display: inline-block;
+		}
+
+		body {
+			padding: 20px;
+			overflow-y: auto;
+		}
+
+		.time-input-group {
+			display: inline-flex;
+			align-items: center;
+			gap: 5px;
+			margin: 5px 0;
+			flex-wrap: wrap;
+		}
+
+		.time-input-group input[type="datetime-local"] {
+			padding: 4px 8px;
+			border: 1px solid #ccc;
+			border-radius: 4px;
+			font-size: 14px;
+		}
+
+		.time-input-group button {
+			padding: 4px 12px;
+		}
+
+		.custom-time-btn {
+			background-color: #FF9800;
+			color: white;
+			font-weight: bold;
+			border: none;
+			border-radius: 4px;
+			padding: 4px 12px;
+			cursor: pointer;
+		}
+
+		.custom-time-btn:hover {
+			background-color: #e68900;
+		}
+
+		.register-btn {
+			background-color: #4CAF50;
+			color: white;
+			font-weight: bold;
+			border: none;
+			border-radius: 4px;
+			padding: 4px 12px;
+			cursor: pointer;
+		}
+
+		.register-btn:hover {
+			background-color: #45a049;
+		}
+
+		.calibrate-btn {
+			background-color: #2196F3;
+			color: white;
+			font-weight: bold;
+			border: none;
+			border-radius: 4px;
+			padding: 4px 12px;
+			cursor: pointer;
+		}
+
+		.calibrate-btn:hover {
+			background-color: #1976D2;
+		}
+	</style>
+	<script type="application/javascript" src="js/dithering.js"></script>
+	<script type="application/javascript" src="js/utils.js"></script>
+</head>
+
+<body>
+	<script>
+		let bleDevice;
+		let gattServer;
+		let epdService;
+		let rxtxService;
+		let epdCharacteristic;
+		let rxtxCharacteristic;
+		let reconnectTrys = 0;
+		let isSend = 0;
+
+		function delay(delayInms) {
+			return new Promise(resolve => {
+				setTimeout(() => {
+					resolve(2);
+				}, delayInms);
+			});
+		}
+
+		function resetVariables() {
+			gattServer = null;
+			epdService = null;
+			epdCharacteristic = null;
+			rxtxCharacteristic = null;
+			rxtxService = null;
+			document.getElementById("log").value = '';
+		}
+
+		async function handleError(error) {
+			console.log(error);
+			resetVariables();
+			if (bleDevice == null)
+				return;
+			if (reconnectTrys <= 5) {
+				reconnectTrys++;
+				await connect();
+			}
+			else {
+				addLog("Was not able to connect, aborting");
+				reconnectTrys = 0;
+			}
+		}
+
+		async function sendCommand(cmd) {
+			if (epdCharacteristic) {
+				await epdCharacteristic.writeValueWithResponse(cmd)
+			} else {
+				addLog('服务不可用。蓝牙链接上了吗？')
+			}
+		}
+
+		async function clearScreen(cmd) {
+			addLog('刷屏')
+			await triggerEpdCmd(`00${cmd}`);
+			await triggerEpdCmd('01')
+		}
+
+		async function rxTxSendCommand(cmd) {
+			if (rxtxCharacteristic) {
+				await rxtxCharacteristic.writeValueWithResponse(cmd);
+			} else {
+				addLog('服务不可用。蓝牙链接上了吗？')
+			}
+		}
+
+		/**
+		 * 时钟校准功能 - 弹出输入框输入十进制数字
+		 * 范围: -32768 到 32767
+		 * 转换为16进制，在前面加"60"后发送
+		 */
+		async function doCalibrate() {
+			// 弹出输入框
+			const inputValue = prompt(
+				'请输入时钟校准值 (十进制整数)：\n\n' +
+				'范围: -32,768 到 32,767\n' +
+				'负数: 时钟走快 (加快)\n' +
+				'正数: 时钟走慢 (减慢)\n' +
+				'例如: 50 表示减慢 50ppm',
+				'5000'
+			);
+
+			// 用户点击取消
+			if (inputValue === null) {
+				addLog('时钟校准已取消');
+				return;
+			}
+
+			const trimmed = inputValue.trim();
+			if (!trimmed) {
+				alert('请输入有效的十进制数字');
+				addLog('时钟校准失败: 输入为空');
+				return;
+			}
+
+			// 检查是否只包含数字和负号
+			const numRegex = /^-?\d+$/;
+			if (!numRegex.test(trimmed)) {
+				alert('请输入有效的十进制整数 (只能包含数字和负号)');
+				addLog('时钟校准失败: 包含非法字符');
+				return;
+			}
+
+			// 转换为数字
+			const value = parseInt(trimmed, 10);
+
+			// 验证范围
+			if (isNaN(value) || value < -32768 || value > 32767) {
+				alert(`值 ${value} 超出范围，请输入 -32768 到 32767 之间的整数`);
+				addLog(`时钟校准失败: 值 ${value} 超出范围`);
+				return;
+			}
+
+			// 将十进制转换为16进制 (有符号16位)
+			let hexValue;
+			if (value < 0) {
+				// 负数: 使用补码表示
+				hexValue = (value & 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
+			} else {
+				hexValue = value.toString(16).toUpperCase().padStart(4, '0');
+			}
+
+			// 在字符串前加 "60"
+			const calibrateCmd = '60' + hexValue;
+			addLog(`时钟校准: 值=${value} (0x${hexValue}), 指令=${calibrateCmd}`);
+
+			// 发送CMD指令
+			try {
+				await triggerRxTxCmd(calibrateCmd);
+				addLog(`✅ 时钟校准成功: 值=${value} (0x${hexValue})`);
+				alert(`时钟校准成功！\n值: ${value}\n十六进制: 0x${hexValue}\n指令: ${calibrateCmd}`);
+			} catch (error) {
+				addLog(`❌ 时钟校准失败: ${error.message}`);
+				alert(`时钟校准失败: ${error.message}`);
+			}
+		}
+
+		/**
+		 * 注册功能 - 弹出输入框输入8位十六进制字符串
+		 * 输入验证后，在字符串前加"50"并发送CMD指令
+		 */
+		async function doRegister() {
+			// 弹出输入框
+			const inputValue = prompt(
+				'请输入 8 位十六进制字符串 (例如: A1B2C3D4 或 a1b2c3d4)：\n\n' +
+				'注意：\n' +
+				'1. 只能包含 0-9 和 A-F (不区分大小写)\n' +
+				'2. 必须正好 8 位',
+				''
+			);
+
+			// 用户点击取消
+			if (inputValue === null) {
+				addLog('注册已取消');
+				return;
+			}
+
+			const trimmed = inputValue.trim();
+			if (!trimmed) {
+				alert('请输入 8 位十六进制字符串');
+				addLog('注册失败: 输入为空');
+				return;
+			}
+
+			// 去除空格，转为大写
+			const cleaned = trimmed.replace(/\s/g, '').toUpperCase();
+
+			// 验证是否只包含十六进制字符
+			const hexRegex = /^[0-9A-F]+$/;
+			if (!hexRegex.test(cleaned)) {
+				alert('输入包含非法字符，只能使用 0-9 和 A-F');
+				addLog('注册失败: 包含非法字符');
+				return;
+			}
+
+			// 验证长度是否为8位
+			if (cleaned.length !== 8) {
+				alert(`输入的字符串长度为 ${cleaned.length} 位，必须是 8 位`);
+				addLog(`注册失败: 长度为 ${cleaned.length} 位，需要 8 位`);
+				return;
+			}
+
+			// 在字符串前加 "50"
+			const registerCmd = '50' + cleaned;
+			addLog(`注册指令: ${registerCmd}`);
+
+			// 发送CMD指令
+			try {
+				await triggerRxTxCmd(registerCmd);
+				addLog(`✅ 注册成功: ${registerCmd}`);
+				alert(`注册成功！\n发送指令: ${registerCmd}`);
+			} catch (error) {
+				addLog(`❌ 注册失败: ${error.message}`);
+				alert(`注册失败: ${error.message}`);
+			}
+		}
+
+		async function upload_tiff_image() {
+			const startTime = new Date().getTime();
+			const buffer = await document.getElementById('tiff_file').files[0].arrayBuffer();
+			const arr = bytesToHex(buffer);
+
+			addLog(`开始上传tiff, 大小 ${arr.length / 1024}KB`);
+
+			await sendCommand(hexToBytes("0000"));
+
+			await sendCommand(hexToBytes("020000"));
+
+			const step = 480;
+			let partIndex = 0;
+			for (let i = 0; i < arr.length; i += step) {
+				addLog(`正在上传第${partIndex + 1}块. 块大小: ${step + 1}byte`);
+				await sendCommand(hexToBytes("03" + arr.slice(i, i + step)));
+				partIndex += 1;
+			}
+
+			await sendCommand(hexToBytes("04"));
+			addLog(`上传tiff完成，耗时${(new Date().getTime() - startTime) / 1000}s`);
+		}
+
+		async function sendBufferData(value, type) {
+			addLog(`开始发送图片模式:${type}, 大小 ${value.length / 2 / 1024}KB`);
+			let code = 'ff';
+			if (type === 'bwr') {
+				code = '00';
+			}
+			const step = 480;
+			let partIndex = 0;
+			for (let i = 0; i < value.length; i += step) {
+				// addLog(`正在发送第${partIndex + 1}块. 块大小: ${step / 2 + 4}byte. 起始位置: ${i / 2}`);
+				await sendCommand(hexToBytes("03" + code + intToHex(i / 2, 2) + value.substring(i, i + step)));
+				partIndex += 1;
+			}
+		}
+
+		async function upload_image() {
+
+			if (isSend == 1) {
+				addLog("正在上传数据中！");
+				return;
+			}
+			isSend = 1;
+			addLog("开始上传数据中,请勿重复点击");
+
+			const canvas = document.getElementById('canvas');
+
+			const startTime = new Date().getTime();
+
+			await sendCommand(hexToBytes("0000"));
+
+			await sendCommand(hexToBytes("020000"));
+
+			await delay(100);
+
+
+			await sendBufferData(bytesToHex(canvas2bytes(canvas)), 'bw');
+
+
+			await sendBufferData(bytesToHex(canvas2bytes(canvas, 'bwr')), 'bwr');
+
+			await sendCommand(hexToBytes("0101"));
+
+
+
+			isSend = 0;
+			addLog(`刷新完成，耗时${(new Date().getTime() - startTime) / 1000}s`);
+		}
+
+		/**
+		 * 获取当前时间的Unix时间戳及相关信息
+		 */
+		function getUnixTime() {
+			const hourOffset = document.getElementById('hour-offset').value;
+			const unixNow = Math.round(Date.now() / 1000) + (60 * 60 * hourOffset) - new Date().getTimezoneOffset() * 60;
+
+			const date = new Date((unixNow + new Date().getTimezoneOffset() * 60) * 1000);
+			const localeTimeString = date.toLocaleTimeString();
+
+			return { unixNow, localeTimeString, year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate(), week: date.getDay() || 7 }
+		}
+
+		/**
+		 * 从输入框获取自定义时间并设置到设备
+		 */
+		async function setCustomTime() {
+			const dateTimeInput = document.getElementById('custom-datetime');
+			const dateTimeStr = dateTimeInput.value;
+
+			if (!dateTimeStr) {
+				addLog('请先选择日期时间');
+				alert('请先选择日期时间');
+				return;
+			}
+
+			// 解析用户输入的日期时间
+			const dateObj = new Date(dateTimeStr);
+			if (isNaN(dateObj.getTime())) {
+				addLog('无效的日期时间格式');
+				alert('无效的日期时间格式');
+				return;
+			}
+
+			// 计算Unix时间戳（秒）
+			// 修复时区问题：datetime-local 返回本地时间，需要转换为UTC时间戳
+			const localTime = dateObj.getTime();
+			const timezoneOffset = dateObj.getTimezoneOffset() * 60 * 1000; // 毫秒
+			const utcTime = localTime - timezoneOffset; // 转换为UTC时间戳
+			const unixNow = Math.floor(utcTime / 1000);
+
+			// 使用UTC时间获取年、月、日、星期
+			const utcDate = new Date(utcTime);
+			const year = utcDate.getUTCFullYear();
+			const month = utcDate.getUTCMonth() + 1;
+			const day = utcDate.getUTCDate();
+			const week = utcDate.getUTCDay() || 7; // 周日为7
+
+			const localeTimeString = dateObj.toLocaleString('zh-CN');
+
+			addLog(`自定义时间设置为: ${localeTimeString} : dd${intToHex(unixNow, 4)}`);
+			addLog(`UTC时间: ${utcDate.toUTCString()}`);
+			await rxTxSendCommand(hexToBytes('dd' +
+				[intToHex(unixNow, 4), intToHex(year, 2), intToHex(month, 1), intToHex(day, 1), intToHex(week, 1)].join('')));
+
+			await rxTxSendCommand(hexToBytes('e2'));
+
+			addLog(`✅ 时间设置成功: ${localeTimeString} (Unix: ${unixNow})`);
+			alert(`时间设置成功！\n${localeTimeString}`);
+		}
+
+		/**
+		 * 设置当前时间（同步电脑时间）
+		 */
+		async function setTime() {
+			const { unixNow, localeTimeString, year, month, day, week } = getUnixTime();
+
+			addLog("时间设置为: " + localeTimeString + " : dd" + intToHex(unixNow, 4));
+			await rxTxSendCommand(hexToBytes('dd' +
+				[intToHex(unixNow, 4), intToHex(year, 2), intToHex(month, 1), intToHex(day, 1), intToHex(week, 1)].join('')));
+
+			await rxTxSendCommand(hexToBytes('e2'))
+		}
+
+		async function triggerRxTxCmd(cmd) {
+			addLog(`发送指令: ${cmd}`)
+			await rxTxSendCommand(hexToBytes(cmd));
+		}
+
+		async function triggerEpdCmd(cmd) {
+			addLog(`发送指令: ${cmd}`)
+			await sendCommand(hexToBytes(cmd));
+		}
+
+		function disconnect() {
+			resetVariables();
+			isSend = 0;
+			addLog('链接已断开.');
+			document.getElementById("connectbutton").innerHTML = '链接';
+		}
+
+		async function preConnect() {
+
+			if (gattServer != null && gattServer.connected) {
+				if (bleDevice != null && bleDevice.gatt.connected)
+					bleDevice.gatt.disconnect();
+			}
+			else {
+				reconnectTrys = 0;
+				bleDevice = await navigator.bluetooth.requestDevice({ optionalServices: ['0000221f-0000-1000-8000-00805f9b34fb', '00001f10-0000-1000-8000-00805f9b34fb', '13187b10-eba9-a3ba-044e-83d3217d9a38'], acceptAllDevices: true });
+				await bleDevice.addEventListener('gattserverdisconnected', disconnect);
+				try {
+					await connect();
+				} catch (e) {
+					await handleError(e);
+				}
+			}
+		}
+
+		async function connectRXTX() {
+			rxtxService = await gattServer.getPrimaryService('00001f10-0000-1000-8000-00805f9b34fb');
+			addLog('> 找到串口服务');
+
+			rxtxCharacteristic = await rxtxService.getCharacteristic('00001f1f-0000-1000-8000-00805f9b34fb');
+			addLog('> 串口服务已链接');
+		}
+
+		async function reConnect() {
+			connectTrys = 0;
+			isSend = 0;
+			if (bleDevice != null && bleDevice.gatt.connected)
+				bleDevice.gatt.disconnect();
+			resetVariables();
+			addLog("重新链接");
+			setTimeout(async function () { await connect(); }, 300);
+		}
+
+		async function connect() {
+			if (epdCharacteristic == null) {
+				addLog("正在链接: " + bleDevice.name);
+
+				gattServer = await bleDevice.gatt.connect();
+				addLog('> 找到GATT服务器');
+
+				epdService = await gattServer.getPrimaryService('13187b10-eba9-a3ba-044e-83d3217d9a38');
+				addLog('> 找到可用服务');
+
+				epdCharacteristic = await epdService.getCharacteristic('4b646063-6264-f3a7-8941-e65356ea82fe');
+				addLog('> 服务已连接');
+
+				await epdCharacteristic.startNotifications();
+
+				epdCharacteristic.addEventListener('characteristicvaluechanged', (event) => {
+					console.log('epd ret', bytesToHex(event.target.value.buffer))
+					const count = parseInt('0x' + bytesToHex(event.target.value.buffer));
+					// addLog(`> [来自屏幕]: 收到${count} byte数据`);
+				});
+
+				document.getElementById("connectbutton").innerHTML = '断开';
+				await connectRXTX();
+				addLog('> 连接完成');
+
+			}
+		}
+
+		function setStatus(statusText) {
+			document.getElementById("status").innerHTML = statusText;
+		}
+
+		function addLog(logTXT) {
+			const today = new Date();
+			const time = ("0" + today.getHours()).slice(-2) + ":" + ("0" + today.getMinutes()).slice(-2) + ":" + ("0" + today.getSeconds()).slice(-2) + " : ";
+
+			const dom = document.getElementById("log");
+
+			dom.innerHTML += time + logTXT + '<br>';
+			dom.scrollTop = dom.scrollHeight;
+		}
+
+		function getUnixTime() {
+			const hourOffset = document.getElementById('hour-offset').value;
+			const unixNow = Math.round(Date.now() / 1000) + (60 * 60 * hourOffset) - new Date().getTimezoneOffset() * 60;
+
+			const date = new Date((unixNow + new Date().getTimezoneOffset() * 60) * 1000);
+			const localeTimeString = date.toLocaleTimeString();
+
+			return { unixNow, localeTimeString, year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate(), week: date.getDay() || 7 }
+		}
+
+		async function update_image() {
+			const image_file = document.getElementById('image_file');
+			if (image_file.files.length > 0) {
+				const file = image_file.files[0];
+
+				const canvas = document.getElementById("canvas");
+				const ctx = canvas.getContext("2d");
+
+				const image = new Image();
+				image.src = URL.createObjectURL(file);
+				image.onload = function (event) {
+					URL.revokeObjectURL(this.src);
+					ctx.drawImage(image, 0, 0, image.width, image.height, 0, 0, canvas.width, canvas.height);
+					convert_dithering()
+				}
+			}
+		}
+
+		function get_position(canvas, x, y) {
+			let rect = canvas.getBoundingClientRect()
+			return {
+				x: x - rect.left * (canvas.width / rect.width),
+				y: y - rect.top * (canvas.height / rect.height)
+			}
+		}
+
+		function clear_canvas() {
+			if (confirm('确认清除屏幕?')) {
+				const canvas = document.getElementById('canvas');
+				const ctx = canvas.getContext("2d");
+				ctx.fillStyle = 'white';
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
+			}
+		}
+
+		function convert_dithering() {
+			const canvas = document.getElementById('canvas');
+			const ctx = canvas.getContext("2d");
+			const mode = document.getElementById('dithering').value;
+			if (mode.startsWith('bwr')) {
+				ditheringCanvasByPalette(canvas, bwrPalette, mode);
+			} else {
+				dithering(ctx, canvas.width, canvas.height, parseInt(document.getElementById('threshold').value), mode);
+			}
+		}
+
+		document.body.onload = () => {
+			setInterval(() => {
+				const { localeTimeString, year, month, day, week } = getUnixTime();
+				document.getElementById('time-setter').innerText = `设置时间为：${year}-${month}-${day} ${localeTimeString} 星期${week}`;
+			}, 1000);
+
+			const canvas = document.getElementById('canvas');
+			const canvasSize = document.getElementById('canvas-size');
+			const ctx = canvas.getContext("2d");
+
+			function applyCanvasSize() {
+				const [width, height] = canvasSize.value.split('x').map(Number);
+				canvas.width = width;
+				canvas.height = height;
+				ctx.clearRect(0, 0, canvas.width, canvas.height);
+				ctx.fillStyle = 'white';
+				ctx.fillRect(0, 0, canvas.width, canvas.height);
+			}
+
+			canvasSize.onchange = applyCanvasSize;
+			applyCanvasSize();
+
+			let is_allow_drawing = false;
+			let is_allow_move_editor = false;
+			const image_mode = document.getElementById('canvas-mode');
+			const paint_size = document.getElementById('paint-size');
+			const paint_color = document.getElementById('paint-color');
+			const editor = document.getElementById('edit-font');
+			const font = document.getElementById('font');
+			document.getElementById('dithering').value = 'bwr_Atkinson';
+			image_mode.value = 'paint';
+			paint_color.value = 'black';
+			font.value = '黑体';
+
+			editor.onmousemove = function (e) {
+				editor.style.fontSize = `${paint_size.value * 10}px`;
+				editor.style.color = paint_color.value;
+				editor.style.fontFamily = font.value;
+				editor.style.fontWeight = 'bold';
+
+				if (is_allow_move_editor) {
+					const { x, y } = get_position(canvas, e.clientX, e.clientY);
+					if (x < 0 || y < 0 || x > canvas.width || y > canvas.height) {
+						return;
+					}
+
+					editor.style.left = `${e.clientX - 20}px`;
+					editor.style.top = `${e.clientY - 20}px`;
+
+				}
+			}
+
+			editor.onmousedown = function (e) {
+				is_allow_move_editor = true;
+			}
+
+			editor.onmouseup = function (e) {
+				is_allow_move_editor = false;
+			}
+
+			document.getElementById('update-text').onclick = function () {
+				if (!editor.value.length) {
+					alert('请先输入文字');
+					return;
+				}
+				editor.style.display = 'none';
+				ctx.beginPath();
+				ctx.font = `bold ${paint_size.value * 10}px ${font.value}`;
+				ctx.fillStyle = paint_color.value;
+				const { x, y } = get_position(canvas, parseInt(editor.style.left), parseInt(editor.style.top) + paint_size.value * 10);
+
+				ctx.fillText(editor.value, x, y);
+			}
+
+			image_mode.onchange = function (e) {
+				if (image_mode.value === 'font') {
+					document.getElementById('update-text').style.display = 'inline-block';
+					document.getElementById('font').style.display = 'inline-block';
+
+					editor.style.display = 'block';
+					editor.style.left = `${e.clientX}px`;
+					editor.style.top = `${e.clientY}px`;
+					return;
+				}
+				document.getElementById('update-text').style.display = 'none';
+				document.getElementById('font').style.display = 'none';
+				editor.style.display = 'none';
+			}
+
+			paint_size.onchange = function () {
+				if (image_mode.value === 'font') {
+					editor.style.fontSize = `${paint_size.value * 10}px`;
+				}
+			}
+
+			paint_color.onchange = function () {
+				if (image_mode.value === 'font') {
+					editor.style.color = paint_color.value;
+				}
+			}
+
+			font.onchange = function () {
+				if (image_mode.value === 'font') {
+					editor.style.fontFamily = font.value;
+				}
+			}
+
+			canvas.onmousedown = function (e) {
+				let ele = get_position(canvas, e.clientX, e.clientY)
+				let { x, y } = ele
+
+				switch (image_mode.value) {
+					case 'paint':
+						is_allow_drawing = true;
+						ctx.beginPath();
+						ctx.moveTo(x, y);
+						break;
+					case 'font':
+						editor.style.display = 'block';
+						editor.style.left = `${e.clientX}px`;
+						editor.style.top = `${e.clientY}px`;
+						editor.style.fontSize = `${paint_size.value * 10}px`;
+						editor.style.color = paint_color.value;
+						editor.style.fontFamily = font.value;
+						editor.style.fontWeight = 'bold';
+
+						break
+					default:
+						break;
+				}
+			};
+
+			canvas.onmousemove = (e) => {
+				let ele = get_position(canvas, e.clientX, e.clientY)
+				let { x, y } = ele;
+				switch (image_mode.value) {
+					case 'paint':
+						if (is_allow_drawing) {
+							ctx.lineWidth = paint_size.value;
+							ctx.strokeStyle = paint_color.value;
+							ctx.lineTo(x, y);
+							ctx.stroke();
+						}
+						break;
+					case 'font':
+						break;
+
+					default:
+						break;
+				}
+			}
+
+			canvas.onmouseup = function () {
+				switch (image_mode.value) {
+					case 'paint':
+						is_allow_drawing = false;
+						break;
+
+					case 'font':
+						editor.focus();
+						is_allow_move_editor = false;
+						break;
+
+					default:
+						break;
+				}
+			}
+
+			canvas.onmouseleave = function () {
+				if (image_mode.value === 'paint') {
+					is_allow_drawing = false;
+				}
+			}
+		}
+	</script>
+	<h2>电子价签蓝牙控制器<a style="margin-left: 130px;" href="uart_flasher.html">串口升级</a><a
+			href="ATC_TLSR_PaperBLEcontrol.html">蓝牙OTA升级</a>
+	</h2>
+
+
+	<button id="connectbutton" type="button" onclick="preConnect();">链接</button>
+	<button type="button" onclick="reConnect();">重新链接</button>
+	<button type="button" onclick="document.getElementById('log').innerHTML = '';">清空日志</button>
+	<br><br>
+
+	<h3>指令控制</h3>
+	<input type="text" id="cmdTXT" value="0055">
+	<button type="button" onclick="triggerEpdCmd(document.getElementById(&quot;cmdTXT&quot;).value);">发送指令</button>
+	<br>
+	<input type="text" id="cmdTXT2" value="FF">
+	<button type="button" onclick="triggerRxTxCmd(document.getElementById(&quot;cmdTXT2&quot;).value);">发送CMD指令</button>
+	<!-- 注册按钮 -->
+	<button class="register-btn" onclick="doRegister()">注册</button>
+	<!-- 时钟校准按钮 -->
+	<button class="calibrate-btn" onclick="doCalibrate()">时钟校准</button>
+	<br>
+    <button type="button" onclick="triggerRxTxCmd('e101')" title="点击该按钮, 切换为时钟模式">日历模式</button>
+	<button type="button" onclick="triggerRxTxCmd('e102')" title="点击该按钮, 切换为时钟模式">时钟模式</button>
+	<button type="button" onclick="triggerRxTxCmd('e100')" title="点击该按钮，然后上传图片。图片将永久显示到屏幕上">图片模式</button>
+	
+	<!-- <button type="button" onclick="clearScreen('00')">清屏全黑</button>
+	<button type="button" onclick="clearScreen('ff')">清屏全白</button>
+	<button type="button" onclick="triggerEpdCmd('0101')">刷新屏幕(图片模式全屏更新)</button>
+	<button type="button" onclick="triggerEpdCmd('0100')">刷新屏幕(图片模式局部更新)</button> -->
+	<br><br>
+
+	<h3>上传图片到屏幕</h3>
+	<input type="file" id="image_file" onchange="update_image()" accept=".png,.jpg,.bmp,.webp">
+	抖动算法：
+	<select id="dithering" title="抖动算法">
+		<optgroup label="黑白">
+			<option value="none">二值化</option>
+			<option value="bayer">bayer</option>
+			<option value="floydsteinberg">floydsteinberg</option>
+			<option value="Atkinson">Atkinson</option>
+		</optgroup>
+		<optgroup label="黑白红多色">
+			<option value="bwr_floydsteinberg">黑白红floydsteinberg</option>
+			<option value="bwr_Atkinson">黑白红Atkinson</option>
+		</optgroup>
+	</select>
+	阈值:
+	<input type="number" max="255" min="0" value="125" id="threshold">
+	<button onclick="update_image()">重新加载</button>
+	<br>
+
+	<div id="canvas-box">
+		<div id="tool-box">
+			模式：
+			<select id="canvas-mode">
+				<option value="paint">画笔</option>
+				<option value="font" title="输入完成后 点击：保存文本框">输入文字</option>
+			</select>
+			画笔/文字大小：
+			<input type="number" max="13" min="1" step="1" value="3" id="paint-size">
+			画笔颜色：
+			<select id="paint-color">
+				<option value="red">红色</option>
+				<option value="white">白色</option>
+				<option value="black">黑色</option>
+			</select>
+			画布尺寸：
+			<select id="canvas-size">
+				<option value="212x104">2.13(212x104)</option>
+				<option value="250x128">2.13(250x128)</option>
+				<option value="296x128">2.9(296x128)</option>
+				<option value="296x152">2.66(296x152)</option>
+				<option value="384x184">3.5(384x184)</option>				
+				<option value="300x400">4.2(300x400)</option>
+				<option value="480x648">5.83(480x648)</option>
+				<option value="384x648">7.5(384x648)</option>
+				<option value="480x800">7.5(480x800)</option>	
+				<option value="528x880">7.5(528x880)</option>								
+
+				<option value="296x128" selected>2.9(296x128)</option>
+			</select>
+
+			<select id="font" title="字体" style="display: none;">
+				<option value="微软雅黑">微软雅黑</option>
+				<option value="黑体">黑体</option>
+				<option value="仿宋">仿宋</option>
+				<option value="宋体">宋体</option>
+				<option value="楷体_GB2312">楷体_GB2312</option>
+				<option value="华文行楷">华文行楷</option>
+			</select>
+			<button id="update-text" style="display: none">保存文本框</button>
+			<button onclick="clear_canvas()">清屏</button>
+		</div>
+		<input id="edit-font"
+			style="max-width: 296px; position: absolute; border: black solid 1px;background-color: rgba(0,0,0,0);display: none;overflow: auto" />
+		<canvas id="canvas" width="296" height="152" style="border: black solid 1px;"></canvas>
+	</div>
+	<br>
+	<button id="upload-screen-button" onclick="upload_image()"
+		style="display:block; font-weight:bold; margin-top:10px;">立即上传到屏幕</button>
+	<br>
+
+	<br>
+	<h3>设置时间</h3>
+	<button id="time-setter" onclick="setTime()">设置时间为: </button> <br>
+	偏移+<input type="number" max="24" min="0" id="hour-offset" value="0" style="width: 40px;">小时
+	<br><br>
+
+	<!-- 自定义时间设置区域 -->
+	<div
+		style="border: 1px solid #FF9800; border-radius: 4px; padding: 10px; margin: 5px 0; background-color: #fff8e1;">
+		<span style="font-weight: bold; color: #e65100;">🕐 自定义时间设置</span>
+		<div class="time-input-group">
+			<input type="datetime-local" id="custom-datetime"
+				style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px;">
+			<button class="custom-time-btn" onclick="setCustomTime()">发送自定义时间</button>
+			<button onclick="document.getElementById('custom-datetime').value = '';"
+				style="padding: 4px 8px;">清空</button>
+			<button
+				onclick="(() => { const now = new Date(); const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000); document.getElementById('custom-datetime').value = local.toISOString().slice(0, 16); })();"
+				style="padding: 4px 8px;">设为当前</button>
+		</div>
+		<small style="color: #888;">格式: YYYY-MM-DDTHH:MM (例如: 2026-07-19T14:30)</small>
+	</div>
+
+	<div id="log-box" style="position: absolute; right: 10px; top: 0px; width: 500px;height:50%;">
+		日志：
+		<br>
+		<div id="log" style="width: 80%; height: 80%; overflow: scroll; border: solid 1px; padding: 20px;">
+
+		</div>
+	</div>
+</body>
+
+</html>
