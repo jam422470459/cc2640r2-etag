@@ -1789,7 +1789,7 @@ canvas.text-placement-mode {
 
     async function load_image() {
       const image_file = document.getElementById('image_file');
-      if (image_file.files.length > 0) {
+      if (image_file && image_file.files.length > 0) {
         const file = image_file.files[0];
 
         const canvas = document.getElementById("canvas");
@@ -2040,7 +2040,7 @@ canvas.text-placement-mode {
   <script>
     async function update_image() {
       const image_file = document.getElementById('image_file');
-      if (image_file.files.length > 0) {
+      if (image_file && image_file.files.length > 0) {
         const file = image_file.files[0];
         const canvas = document.getElementById("canvas");
         const ctx = canvas.getContext("2d");
@@ -2274,16 +2274,6 @@ canvas.text-placement-mode {
     <div>
       <button type="button" onclick="doCmd('mode', 'clock')">时钟模式</button>
       <button type="button" onclick="doCmd('mode', 'calendar')">日历模式</button>
-  <label for="weekStart">星期第一天:</label>
-  <select id="weekStart">
-    <option value="1" selected>周一</option>
-    <option value="2">周二</option>
-    <option value="3">周三</option>
-    <option value="4">周四</option>
-    <option value="5">周五</option>
-    <option value="6">周六</option>
-    <option value="0">周日</option>
-  </select>
       <button id="btnReadEtag" type="button" onclick="doReadEtag()">ReadEtag</button>
       <button id="btnSetTime" type="button" onclick="doSetTime()">同步当前时间</button>
       <!-- 手动设置时间按钮 -->
@@ -2310,7 +2300,6 @@ canvas.text-placement-mode {
       <button type="button" onclick="doFill('red')">全红</button>
     </div>
 <div id="canvas-box">
-  <input type="file" id="image_file" onchange="update_image()" accept=".png,.jpg,.bmp,.webp,.gif">
   <!-- 新画布拖放区 (52811) -->
   <div id="imageDropZone" class="flex-container file-picker-row" title="可选择图片，也可将图片拖放到这里">
     <label for="imageFile" class="file-picker-title">图片文件(新画布):</label>
@@ -6245,7 +6234,7 @@ function drawCalendarMonthGrid(context, date, profile, settings, bounds, options
   const colors = getCalendarPreviewColors(profile);
   const accent = getCalendarAccent(profile, settings, colors);
   const softAccent = profile.numericColorMode === 4 ? colors.yellow : colors.white;
-  const weekStart = Number(document.getElementById('weekStart')?.value) || 0;
+  const weekStart = Number(document.getElementById('weekStart')?.value) || 1;
   const year = date.getFullYear();
   const month = date.getMonth();
   const firstOffset = (new Date(year, month, 1).getDay() - weekStart + 7) % 7;
