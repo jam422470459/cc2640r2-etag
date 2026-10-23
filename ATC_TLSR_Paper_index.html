@@ -3,96 +3,457 @@
 
 <head>
 	<meta charset="utf-8">
-	<meta http-equiv="content-type" content="text/html; charset=utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>电子价签蓝牙控制器</title>
-	<style>
-		#tool-box>* {
-			margin-right: 5px;
-		}
-
-		* {
-			padding: 0;
-			margin: 0;
-		}
-
-		button,
-		a {
-			padding: 2px;
-			margin: 2px;
-			display: inline-block;
-		}
-
-		body {
-			padding: 20px;
-			overflow-y: auto;
-		}
-
-		.time-input-group {
-			display: inline-flex;
-			align-items: center;
-			gap: 5px;
-			margin: 5px 0;
-			flex-wrap: wrap;
-		}
-
-		.time-input-group input[type="datetime-local"] {
-			padding: 4px 8px;
-			border: 1px solid #ccc;
-			border-radius: 4px;
-			font-size: 14px;
-		}
-
-		.time-input-group button {
-			padding: 4px 12px;
-		}
-
-		.custom-time-btn {
-			background-color: #FF9800;
-			color: white;
-			font-weight: bold;
-			border: none;
-			border-radius: 4px;
-			padding: 4px 12px;
-			cursor: pointer;
-		}
-
-		.custom-time-btn:hover {
-			background-color: #e68900;
-		}
-
-		.register-btn {
-			background-color: #4CAF50;
-			color: white;
-			font-weight: bold;
-			border: none;
-			border-radius: 4px;
-			padding: 4px 12px;
-			cursor: pointer;
-		}
-
-		.register-btn:hover {
-			background-color: #45a049;
-		}
-
-		.calibrate-btn {
-			background-color: #2196F3;
-			color: white;
-			font-weight: bold;
-			border: none;
-			border-radius: 4px;
-			padding: 4px 12px;
-			cursor: pointer;
-		}
-
-		.calibrate-btn:hover {
-			background-color: #1976D2;
-		}
-	</style>
+	<link rel="stylesheet" href="css/main.css">
 	<script type="application/javascript" src="js/dithering.js"></script>
 	<script type="application/javascript" src="js/utils.js"></script>
+	<script type="application/javascript" src="js/dithering-pro.js"></script>
+	<script type="application/javascript" src="js/paint.js"></script>
+	<script type="application/javascript" src="js/crop.js"></script>
 </head>
 
 <body>
+	<nav class="global-nav" aria-label="全局导航">
+		<div class="global-nav-inner">
+			<a class="global-brand" href="ATC_TLSR_Paper_index.html">ETAG</a>
+			<a href="#bluetooth-panel">蓝牙</a>
+			<a href="#command-panel">指令</a>
+			<a href="#image-panel">传图</a>
+			<a href="#time-panel">时间</a>
+			<a href="#log-panel">日志</a>
+		</div>
+	</nav>
+	<div class="sub-nav-frosted">
+		<div class="sub-nav-inner">
+			<span class="sub-nav-title">电子价签工具</span>
+			<span class="sub-nav-meta">TLSR8359 · Web Bluetooth</span>
+			<span class="sub-nav-links">
+				<a href="uart_flasher.html">串口升级</a>
+				<a href="ATC_TLSR_PaperBLEcontrol.html">蓝牙OTA升级</a>
+			</span>
+		</div>
+	</div>
+	<div class="main">
+		<h3>电子价签蓝牙控制器</h3>
+
+		<fieldset id="bluetooth-panel">
+			<legend>蓝牙连接</legend>
+			<div class="flex-container">
+				<div class="flex-group">
+					<button id="connectbutton" type="button" class="primary" onclick="preConnect();">链接</button>
+					<button type="button" class="secondary" onclick="reConnect();">重新链接</button>
+					<button type="button" class="secondary"
+						onclick="document.getElementById('log').innerHTML = '';">清空日志</button>
+				</div>
+			</div>
+		</fieldset>
+
+		<fieldset id="command-panel">
+			<legend>指令控制</legend>
+			<div class="flex-container options">
+				<div class="flex-group">
+					<label for="cmdTXT">EPD 指令</label>
+					<input type="text" id="cmdTXT" value="0055">
+					<button type="button" class="primary"
+						onclick="triggerEpdCmd(document.getElementById('cmdTXT').value);">发送指令</button>
+				</div>
+				<div class="flex-group">
+					<label for="cmdTXT2">CMD 指令</label>
+					<input type="text" id="cmdTXT2" value="FF">
+					<button type="button" class="secondary"
+						onclick="triggerRxTxCmd(document.getElementById('cmdTXT2').value);">发送CMD指令</button>
+				</div>
+			</div>
+			<div class="flex-container">
+				<div class="flex-group">
+					<button type="button" class="primary" onclick="doRegister()">注册</button>
+					<button type="button" class="secondary" onclick="doCalibrate()">时钟校准</button>
+				</div>
+			</div>
+			<div class="flex-container">
+				<div class="flex-group">
+					<button type="button" class="primary" onclick="triggerRxTxCmd('e101')"
+						title="点击该按钮, 切换为时钟模式">日历模式</button>
+					<button type="button" class="primary" onclick="triggerRxTxCmd('e102')"
+						title="点击该按钮, 切换为时钟模式">时钟模式</button>
+					<button type="button" class="secondary" onclick="triggerRxTxCmd('e100')"
+						title="点击该按钮，然后上传图片。图片将永久显示到屏幕上">图片模式</button>
+					<button id="calendarToggle" type="button" class="secondary" aria-expanded="false"
+						aria-controls="calendar-panel" title="生成可上传的日历图片">日历图</button>
+				</div>
+			</div>
+		</fieldset>
+
+		<fieldset id="calendar-panel" class="calendar-panel" hidden>
+			<legend>日历图</legend>
+			<div class="calendar-workspace">
+				<div class="calendar-preview-column">
+					<div class="calendar-section-title">日历预览</div>
+					<div class="calendar-preview-frame">
+						<canvas id="calendarPreview" width="296" height="128" aria-label="日历预览"></canvas>
+					</div>
+					<p class="hint">预览按当前画布尺寸生成；296×128 建议“大字日期”，完整月历请调大画布。</p>
+				</div>
+				<div class="calendar-controls">
+					<div class="calendar-section-title">日历样式</div>
+					<div class="calendar-grid">
+						<label class="calendar-input-group">
+							<span>布局</span>
+							<select id="calendarLayout">
+								<option value="day" selected>大字日期</option>
+								<option value="grid">月历网格</option>
+								<option value="split">左日右历</option>
+								<option value="classic">台历经典</option>
+								<option value="duo">双挂日历</option>
+							</select>
+						</label>
+						<label class="calendar-input-group">
+							<span>字体预设</span>
+							<select id="calendarFontPreset">
+								<option value="Microsoft YaHei, SimHei, sans-serif" selected>微软雅黑</option>
+								<option value="SimHei, Microsoft YaHei, sans-serif">黑体</option>
+								<option value="SimSun, Songti SC, serif">宋体</option>
+								<option value="KaiTi, Kaiti SC, serif">楷体</option>
+								<option value="FangSong, STFangsong, serif">仿宋</option>
+								<option value="DengXian, Microsoft YaHei, sans-serif">等线</option>
+								<option value="Source Han Sans SC, Noto Sans CJK SC, sans-serif">思源黑体</option>
+							</select>
+						</label>
+						<label class="calendar-input-group">
+							<span>日期</span>
+							<input type="date" id="calendarDate">
+						</label>
+						<label class="calendar-input-group">
+							<span>星期开始</span>
+							<select id="calendarWeekStart">
+								<option value="1" selected>周一</option>
+								<option value="0">周日</option>
+							</select>
+						</label>
+						<label class="calendar-input-group">
+							<span>标题</span>
+							<input type="text" id="calendarTitle" maxlength="16" placeholder="可选标题">
+						</label>
+						<label class="calendar-input-group">
+							<span>强调色</span>
+							<select id="calendarAccent">
+								<option value="red" selected>红色</option>
+								<option value="black">黑色</option>
+							</select>
+						</label>
+						<label class="calendar-check">
+							<input type="checkbox" id="calendarLunar" checked>
+							<span>显示农历/节气</span>
+						</label>
+					</div>
+					<div class="calendar-size-section">
+						<div class="calendar-size-header">
+							<div class="calendar-section-title">字号调节</div>
+							<button id="calendarFontReset" class="secondary" type="button">重置字号</button>
+						</div>
+						<div class="calendar-size-grid">
+							<label class="calendar-size-control"><span>主日期</span><input type="range"
+									id="calendarFontMainDay" min="24" max="260"
+									value="170"><output data-size-value-for="calendarFontMainDay">170px</output></label>
+							<label class="calendar-size-control"><span>标题</span><input type="range"
+									id="calendarFontTitle" min="8" max="180"
+									value="28"><output data-size-value-for="calendarFontTitle">28px</output></label>
+							<label class="calendar-size-control"><span>星期</span><input type="range"
+									id="calendarFontWeekday" min="8" max="180"
+									value="28"><output data-size-value-for="calendarFontWeekday">28px</output></label>
+							<label class="calendar-size-control"><span>月历数字</span><input type="range"
+									id="calendarFontCellDay" min="8" max="120"
+									value="24"><output data-size-value-for="calendarFontCellDay">24px</output></label>
+							<label class="calendar-size-control"><span>月历农历</span><input type="range"
+									id="calendarFontCellLunar" min="8" max="80"
+									value="13"><output data-size-value-for="calendarFontCellLunar">13px</output></label>
+						</div>
+					</div>
+					<div class="calendar-actions">
+						<button id="calendarRender" class="secondary" type="button">生成到画布</button>
+						<button id="calendarSend" class="primary" type="button">生成并上传</button>
+					</div>
+				</div>
+			</div>
+		</fieldset>
+
+		<fieldset id="image-panel">
+			<legend>蓝牙传图</legend>
+			<div id="imageDropZone" class="flex-container file-picker-row" title="可选择图片，也可将图片拖放到这里">
+				<label for="imageFile" class="file-picker-title">图片文件:</label>
+				<input type="file" id="imageFile" accept=".png,.jpg,.bmp,.webp,.jpeg" onchange="updateImage()">
+			</div>
+			<div class="flex-container options">
+				<div class="flex-group">
+					<label for="canvasSize">画布尺寸:</label>
+					<select id="canvasSize" onchange="updateCanvasSize()">
+						<option value="212x104">2.13(212x104)</option>
+						<option value="250x128">2.13(250x128)</option>
+						<option value="296x128" selected>2.9(296x128)</option>
+						<option value="296x152">2.66(296x152)</option>
+						<option value="384x184">3.5(384x184)</option>
+						<option value="300x400">4.2(300x400)</option>
+						<option value="480x648">5.83(480x648)</option>
+						<option value="384x648">7.5(384x648)</option>
+						<option value="480x800">7.5(480x800)</option>
+						<option value="528x880">7.5(528x880)</option>
+					</select>
+				</div>
+				<div class="flex-group">
+					<label for="ditherMode">颜色模式:</label>
+					<select id="ditherMode" onchange="applyDither()">
+						<option value="blackWhiteColor">双色(黑白)</option>
+						<option value="threeColor" selected>三色(黑白红)</option>
+					</select>
+				</div>
+				<div class="flex-group">
+					<label for="ditherAlg">抖动算法:</label>
+					<select id="ditherAlg" onchange="applyDither()">
+						<option value="floydSteinberg">Floyd-Steinberg</option>
+						<option value="atkinson">Atkinson</option>
+						<option value="bayer">Bayer</option>
+						<option value="stucki">Stucki</option>
+						<option value="jarvis">Jarvis-Judice-Ninke</option>
+						<option value="none">无抖动</option>
+					</select>
+					<button id="resetDitherAdjustments" type="button" class="secondary">还原默认</button>
+				</div>
+			</div>
+			<div class="flex-container options dither-adjust-row">
+				<div class="flex-group">
+					<label for="ditherStrength">抖动强度:</label>
+					<input type="range" min="0" max="5" step="0.1" value="1.0" id="ditherStrength">
+					<label id="ditherStrengthValue">1.0</label>
+				</div>
+				<div class="flex-group">
+					<label for="ditherContrast">对比度:</label>
+					<input type="range" min="0.5" max="2" step="0.1" value="1.2" id="ditherContrast">
+					<label id="ditherContrastValue">1.2</label>
+				</div>
+				<div class="flex-group">
+					<label for="ditherBrightness">亮度:</label>
+					<input type="range" min="-80" max="80" step="1" value="0" id="ditherBrightness">
+					<label id="ditherBrightnessValue">0</label>
+				</div>
+				<div class="flex-group">
+					<label for="ditherSaturation">饱和度:</label>
+					<input type="range" min="0" max="2.5" step="0.1" value="1.2" id="ditherSaturation">
+					<label id="ditherSaturationValue">1.2</label>
+				</div>
+			</div>
+			<div class="status-bar"><b>状态：</b><span id="status"></span></div>
+			<div class="flex-container image-actions-row">
+				<div class="flex-group image-send-actions" role="group" aria-label="发送和图片方向操作">
+					<button type="button" class="secondary" onclick="downloadDataArray()">下载数组</button>
+					<button id="sendimgbutton" type="button" class="primary" onclick="sendimg()">立即上传</button>
+					<button id="rotate-left" type="button" title="向左旋转" aria-label="向左旋转" class="tool-button">↺</button>
+					<button id="rotate-right" type="button" title="向右旋转" aria-label="向右旋转" class="tool-button">↻</button>
+					<button id="reset-transform" type="button" title="重置图片位置、缩放和旋转" aria-label="重置图片变换" class="tool-button">⟲</button>
+					<button id="clear-canvas" type="button" title="清除当前图片和画布" aria-label="清除画布" class="tool-button">⌫</button>
+				</div>
+			</div>
+			<div class="canvas-container">
+				<div class="canvas-title"></div>
+				<canvas id="canvas" width="296" height="128"></canvas>
+				<div class="flex-container canvas-tools">
+					<div class="flex-group tool-buttons">
+						<button id="brush-mode" title="画笔" class="tool-button">✏️</button>
+						<button id="eraser-mode" title="橡皮擦" class="tool-button">🧽</button>
+						<button id="text-mode" title="添加文字" class="tool-button">T</button>
+						<button id="todo-mode" title="待办事项" class="tool-button">☐</button>
+						<button id="schedule-mode" title="课表" class="tool-button">📅</button>
+						<button id="matter-mode" title="事项模板" class="tool-button">事</button>
+						<button id="undo-btn" title="撤销 (Ctrl+Z)" class="tool-button hide">↶</button>
+						<button id="redo-btn" title="重做 (Ctrl+Y)" class="tool-button hide">↷</button>
+					</div>
+				</div>
+				<div class="flex-container canvas-tools">
+					<div class="flex-group brush-tools">
+						<label for="brush-color">颜色:</label>
+						<select id="brush-color">
+							<option value="#000000">黑色</option>
+							<option value="#FF0000">红色</option>
+							<option value="#FFFFFF">白色</option>
+						</select>
+						<span class="brush-size-controls">
+							<label for="brush-size">粗细:</label>
+							<input type="number" id="brush-size" value="2" min="1" max="100">
+							<input type="range" id="brush-size-range" value="2" min="1" max="100">
+						</span>
+					</div>
+				</div>
+				<div class="flex-container canvas-tools">
+					<div class="flex-group text-tools shared-font-tools">
+						<label for="font-family">字体:</label>
+						<select id="font-family">
+							<option value="Arial">Arial</option>
+							<option value="sans-serif">Sans-serif</option>
+							<option value="monospace">Monospace</option>
+							<option value="SimSun">宋体</option>
+							<option value="SimHei">黑体</option>
+							<option value="Microsoft Yahei">微软雅黑</option>
+							<option value="Microsoft JhengHei">微软正黑体</option>
+							<option value="KaiTi">楷体</option>
+							<option value="NSimSun">新宋体</option>
+							<option value="FangSong">仿宋</option>
+							<option value="YouYuan">幼圆</option>
+							<option value="LiSu">隶书</option>
+							<option value="STHeiti">华文黑体</option>
+							<option value="STXihei">华文细黑</option>
+							<option value="STKaiti">华文楷体</option>
+							<option value="STSong">华文宋体</option>
+							<option value="STFangsong">华文仿宋</option>
+							<option value="STZhongsong">华文中宋</option>
+							<option value="STHupo">华文琥珀</option>
+							<option value="STXinwei">华文新魏</option>
+							<option value="STLiti">华文隶书</option>
+							<option value="STXingkai">华文行楷</option>
+							<option value="FZShuTi">方正舒体</option>
+							<option value="FZYaoti">方正姚体</option>
+							<option value="PingFang SC">苹方</option>
+							<option value="Source Han Sans CN">思源黑体</option>
+							<option value="Source Han Serif SC">思源宋体</option>
+							<option value="WenQuanYi Micro Hei">文泉驿微米黑</option>
+						</select>
+						<span class="text-size-controls">
+							<label for="font-size">大小:</label>
+							<input type="number" id="font-size" value="16" min="1" max="100">
+							<input type="range" id="font-size-range" value="16" min="1" max="100">
+						</span>
+					</div>
+					<div class="flex-group text-tools">
+						<input type="text" id="text-input" placeholder="输入文字" style="width:150px">
+						<button id="text-bold" title="粗体">B</button>
+						<button id="text-italic" title="斜体">I</button>
+						<button id="add-text-btn" class="primary">添加文字</button>
+					</div>
+					<div class="flex-group todo-tools">
+						<label for="todo-font-size">大小:</label>
+						<input type="number" id="todo-font-size" value="16" min="8" max="100">
+						<input type="range" id="todo-font-size-range" value="16" min="8" max="100">
+					</div>
+					<div class="flex-group todo-tools">
+						<input type="text" id="todo-input" placeholder="输入待办事项" style="width:170px">
+						<select id="todo-color">
+							<option value="#000000">黑色</option>
+							<option value="#FF0000">红色</option>
+						</select>
+						<button id="todo-bold" title="粗体">B</button>
+						<button id="todo-italic" title="斜体">I</button>
+						<button id="toggle-todo-delete-btn" title="显示/隐藏删除按钮" class="primary">删除键</button>
+						<button id="add-todo-btn" class="primary">添加待办</button>
+					</div>
+					<div class="flex-group schedule-tools">
+						<label for="schedule-days">天数:</label>
+						<input type="number" id="schedule-days" value="5" min="1" max="7">
+						<label for="schedule-classes">节数:</label>
+						<input type="number" id="schedule-classes" value="6" min="1" max="12">
+						<label for="schedule-font-size">字号:</label>
+						<input type="number" id="schedule-font-size" value="12" min="6" max="32">
+						<button id="schedule-font-decrease-btn" title="减小字号">-</button>
+						<button id="schedule-font-increase-btn" title="增大字号">+</button>
+						<select id="schedule-color">
+							<option value="#000000">黑色</option>
+							<option value="#FF0000">红色</option>
+						</select>
+						<button id="toggle-schedule-cell-indicator-btn" title="显示/隐藏选中标记" class="primary">标记</button>
+						<button id="create-schedule-btn" class="primary">生成课表</button>
+					</div>
+					<div class="flex-group schedule-tools">
+						<button id="schedule-zoom-in-btn" title="放大">+</button>
+						<button id="schedule-zoom-out-btn" title="缩小">-</button>
+						<button id="schedule-move-left-btn" title="左移">⇦</button>
+						<button id="schedule-move-up-btn" title="上移">⇧</button>
+						<button id="schedule-move-down-btn" title="下移">⇩</button>
+						<button id="schedule-move-right-btn" title="右移">⇨</button>
+					</div>
+					<div class="flex-group schedule-tools schedule-input-tools">
+						<textarea id="schedule-input" placeholder="输入课程，支持换行" rows="2" style="width:220px"></textarea>
+						<button id="schedule-input-confirm-btn" class="primary">确定</button>
+						<button id="schedule-input-cancel-btn" class="secondary">取消</button>
+					</div>
+					<div class="flex-group matter-tools matter-actions">
+						<button id="matter-render-btn" class="primary">生成事项</button>
+						<button id="matter-add-limit-btn">添加限时</button>
+						<button id="matter-add-todo-btn">添加待办</button>
+						<button id="matter-add-schedule-btn">添加日程</button>
+						<button id="matter-clear-btn" class="secondary">清空事项</button>
+					</div>
+					<div class="matter-tools matter-editor">
+						<div class="matter-section">
+							<div class="matter-section-title">限时事项</div>
+							<table id="matter-limit-table">
+								<thead>
+									<tr><th>名称</th><th>提醒</th><th>截止</th><th></th></tr>
+								</thead>
+								<tbody></tbody>
+							</table>
+						</div>
+						<div class="matter-section">
+							<div class="matter-section-title">待办事项</div>
+							<table id="matter-todo-table">
+								<thead>
+									<tr><th>事项</th><th>级别</th><th></th></tr>
+								</thead>
+								<tbody></tbody>
+							</table>
+						</div>
+						<div class="matter-section">
+							<div class="matter-section-title">今日日程</div>
+							<table id="matter-schedule-table">
+								<thead>
+									<tr><th>分类</th><th>内容</th><th></th></tr>
+								</thead>
+								<tbody></tbody>
+							</table>
+						</div>
+					</div>
+				</div>
+			</div>
+		</fieldset>
+
+		<fieldset id="time-panel">
+			<legend>设置时间</legend>
+			<div class="flex-container">
+				<div class="flex-group">
+					<button id="time-setter" type="button" class="primary" onclick="setTime()">设置时间为: </button>
+				</div>
+				<div class="flex-group">
+					<label for="hour-offset">偏移 +</label>
+					<input type="number" max="24" min="0" id="hour-offset" value="0" style="width: 72px;">
+					<span class="hint">小时</span>
+				</div>
+			</div>
+			<div class="soft-panel">
+				<div class="soft-panel-title">🕐 自定义时间设置</div>
+				<div class="time-input-group">
+					<input type="datetime-local" id="custom-datetime">
+					<button type="button" class="primary" onclick="setCustomTime()">发送自定义时间</button>
+					<button type="button" class="secondary"
+						onclick="document.getElementById('custom-datetime').value = '';">清空</button>
+					<button type="button" class="secondary"
+						onclick="(() => { const now = new Date(); const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000); document.getElementById('custom-datetime').value = local.toISOString().slice(0, 16); })();">设为当前</button>
+				</div>
+				<p class="hint">格式: YYYY-MM-DDTHH:MM (例如: 2026-07-19T14:30)</p>
+			</div>
+		</fieldset>
+
+		<fieldset id="log-panel">
+			<legend>日志</legend>
+			<div id="log" class="log-container"></div>
+		</fieldset>
+
+		<div class="footer">
+			<span class="links">
+				<a href="https://github.com/atc1441/ATC_TLSR_Paper" target="_blank">固件 GitHub</a>
+				<a href="uart_flasher.html">串口升级</a>
+				<a href="ATC_TLSR_PaperBLEcontrol.html">蓝牙OTA升级</a>
+			</span>
+			<span class="copy">Source from atc1441 · Web Tools</span>
+		</div>
+	</div>
+
 	<script>
 		let bleDevice;
 		let gattServer;
@@ -108,6 +469,24 @@
 				setTimeout(() => {
 					resolve(2);
 				}, delayInms);
+			});
+		}
+
+		// 固件刷屏是异步的: 收到 0101 只启动刷屏, 刷完后通过 EPD 特征通知 A5 5A.
+		let refreshDoneFinish = null;
+
+		function waitRefreshDone(timeoutMs) {
+			return new Promise((resolve) => {
+				let finished = false;
+				const timer = setTimeout(() => finish(false), timeoutMs);
+				function finish(ok) {
+					if (finished) return;
+					finished = true;
+					refreshDoneFinish = null;
+					clearTimeout(timer);
+					resolve(ok);
+				}
+				refreshDoneFinish = finish;
 			});
 		}
 
@@ -312,17 +691,25 @@
 		}
 
 		async function sendBufferData(value, type) {
-			addLog(`开始发送图片模式:${type}, 大小 ${value.length / 2 / 1024}KB`);
+			const totalBytes = value.length / 2;
+			addLog(`开始发送图片数据(${type}), 大小 ${(totalBytes / 1024).toFixed(1)}KB`);
 			let code = 'ff';
 			if (type === 'bwr') {
 				code = '00';
 			}
 			const step = 480;
 			let partIndex = 0;
+			const t0 = performance.now();
 			for (let i = 0; i < value.length; i += step) {
 				// addLog(`正在发送第${partIndex + 1}块. 块大小: ${step / 2 + 4}byte. 起始位置: ${i / 2}`);
 				await sendCommand(hexToBytes("03" + code + intToHex(i / 2, 2) + value.substring(i, i + step)));
 				partIndex += 1;
+				if (partIndex % 20 === 0 || i + step >= value.length) {
+					const sent = Math.min(i + step, value.length) / 2;
+					const elapsed = (performance.now() - t0) / 1000;
+					const rate = elapsed > 0 ? (sent / 1024 / elapsed) : 0;
+					addLog(`[${type}] ${sent}/${totalBytes} 字节 (${(sent / totalBytes * 100).toFixed(0)}%), ${elapsed.toFixed(1)}s, ${rate.toFixed(2)}KB/s`);
+				}
 			}
 		}
 
@@ -335,28 +722,41 @@
 			isSend = 1;
 			addLog("开始上传数据中,请勿重复点击");
 
-			const canvas = document.getElementById('canvas');
+			try {
+				const canvas = document.getElementById('canvas');
 
-			const startTime = new Date().getTime();
+				const startTime = new Date().getTime();
 
-			await sendCommand(hexToBytes("0000"));
+				await sendCommand(hexToBytes("0000"));
 
-			await sendCommand(hexToBytes("020000"));
+				await sendCommand(hexToBytes("020000"));
 
-			await delay(100);
-
-
-			await sendBufferData(bytesToHex(canvas2bytes(canvas)), 'bw');
+				await delay(100);
 
 
-			await sendBufferData(bytesToHex(canvas2bytes(canvas, 'bwr')), 'bwr');
-
-			await sendCommand(hexToBytes("0101"));
+				await sendBufferData(bytesToHex(canvas2bytes(canvas)), 'bw');
 
 
+				await sendBufferData(bytesToHex(canvas2bytes(canvas, 'bwr')), 'bwr');
 
-			isSend = 0;
-			addLog(`刷新完成，耗时${(new Date().getTime() - startTime) / 1000}s`);
+				// 固件收到 0101 后只是启动刷屏(约 15~20 秒), 刷完后会主动通知
+				// A5 5A, 这里等它, 免得把"数据发完"误当成"刷屏完成".
+				const refreshDone = waitRefreshDone(120000);
+				await sendCommand(hexToBytes("0101"));
+				const done = await refreshDone;
+
+				const secs = ((new Date().getTime() - startTime) / 1000).toFixed(1);
+				if (done) {
+					addLog(`刷新完成，耗时${secs}s`);
+				} else {
+					addLog(`数据发送结束(${secs}s)，但刷屏未确认，请看上面固件回传的日志`);
+				}
+			} catch (error) {
+				addLog(`❌ 上传失败: ${error.message}`);
+				console.error(error);
+			} finally {
+				isSend = 0;
+			}
 		}
 
 		/**
@@ -444,6 +844,8 @@
 		}
 
 		function disconnect() {
+			if (refreshDoneFinish)
+				refreshDoneFinish(false);
 			resetVariables();
 			isSend = 0;
 			addLog('链接已断开.');
@@ -502,9 +904,38 @@
 				await epdCharacteristic.startNotifications();
 
 				epdCharacteristic.addEventListener('characteristicvaluechanged', (event) => {
-					console.log('epd ret', bytesToHex(event.target.value.buffer))
-					const count = parseInt('0x' + bytesToHex(event.target.value.buffer));
-					// addLog(`> [来自屏幕]: 收到${count} byte数据`);
+					const hex = bytesToHex(event.target.value.buffer).toLowerCase();
+					console.log('epd ret', hex)
+					switch (hex) {
+						case 'a001':
+							addLog('> 设备已注册(passid 校验通过), 开始接收图片数据');
+							break;
+						case 'a000':
+							addLog('> ⚠ 设备未注册(passid 校验失败): 固件会丢弃全部图片数据, 请先点“注册”');
+							break;
+						case 'a201':
+							addLog('> 面板已进入刷屏(BUSY 已拉低)');
+							break;
+						case 'a55a':
+							addLog('> 刷屏完成');
+							if (refreshDoneFinish)
+								refreshDoneFinish(true);
+							break;
+						case 'a501':
+							addLog('> ❌ 刷屏命令已发但面板无反应(BUSY 一直没拉低): 面板可能处于 deep sleep / 未初始化 / 排线问题');
+							if (refreshDoneFinish)
+								refreshDoneFinish(false);
+							break;
+						case 'a502':
+							addLog('> ❌ 刷屏超过 45 秒仍未结束');
+							if (refreshDoneFinish)
+								refreshDoneFinish(false);
+							break;
+						default:
+							// 0x03 数据包的应答: 值为本次收到的长度
+							// const count = parseInt('0x' + hex);
+							break;
+					}
 				});
 
 				document.getElementById("connectbutton").innerHTML = '断开';
@@ -538,359 +969,15 @@
 			return { unixNow, localeTimeString, year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate(), week: date.getDay() || 7 }
 		}
 
-		async function update_image() {
-			const image_file = document.getElementById('image_file');
-			if (image_file.files.length > 0) {
-				const file = image_file.files[0];
-
-				const canvas = document.getElementById("canvas");
-				const ctx = canvas.getContext("2d");
-
-				const image = new Image();
-				image.src = URL.createObjectURL(file);
-				image.onload = function (event) {
-					URL.revokeObjectURL(this.src);
-					ctx.drawImage(image, 0, 0, image.width, image.height, 0, 0, canvas.width, canvas.height);
-					convert_dithering()
-				}
-			}
-		}
-
-		function get_position(canvas, x, y) {
-			let rect = canvas.getBoundingClientRect()
-			return {
-				x: x - rect.left * (canvas.width / rect.width),
-				y: y - rect.top * (canvas.height / rect.height)
-			}
-		}
-
-		function clear_canvas() {
-			if (confirm('确认清除屏幕?')) {
-				const canvas = document.getElementById('canvas');
-				const ctx = canvas.getContext("2d");
-				ctx.fillStyle = 'white';
-				ctx.fillRect(0, 0, canvas.width, canvas.height);
-			}
-		}
-
-		function convert_dithering() {
-			const canvas = document.getElementById('canvas');
-			const ctx = canvas.getContext("2d");
-			const mode = document.getElementById('dithering').value;
-			if (mode.startsWith('bwr')) {
-				ditheringCanvasByPalette(canvas, bwrPalette, mode);
-			} else {
-				dithering(ctx, canvas.width, canvas.height, parseInt(document.getElementById('threshold').value), mode);
-			}
-		}
-
 		document.body.onload = () => {
 			setInterval(() => {
 				const { localeTimeString, year, month, day, week } = getUnixTime();
 				document.getElementById('time-setter').innerText = `设置时间为：${year}-${month}-${day} ${localeTimeString} 星期${week}`;
 			}, 1000);
-
-			const canvas = document.getElementById('canvas');
-			const canvasSize = document.getElementById('canvas-size');
-			const ctx = canvas.getContext("2d");
-
-			function applyCanvasSize() {
-				const [width, height] = canvasSize.value.split('x').map(Number);
-				canvas.width = width;
-				canvas.height = height;
-				ctx.clearRect(0, 0, canvas.width, canvas.height);
-				ctx.fillStyle = 'white';
-				ctx.fillRect(0, 0, canvas.width, canvas.height);
-			}
-
-			canvasSize.onchange = applyCanvasSize;
-			applyCanvasSize();
-
-			let is_allow_drawing = false;
-			let is_allow_move_editor = false;
-			const image_mode = document.getElementById('canvas-mode');
-			const paint_size = document.getElementById('paint-size');
-			const paint_color = document.getElementById('paint-color');
-			const editor = document.getElementById('edit-font');
-			const font = document.getElementById('font');
-			document.getElementById('dithering').value = 'bwr_Atkinson';
-			image_mode.value = 'paint';
-			paint_color.value = 'black';
-			font.value = '黑体';
-
-			editor.onmousemove = function (e) {
-				editor.style.fontSize = `${paint_size.value * 10}px`;
-				editor.style.color = paint_color.value;
-				editor.style.fontFamily = font.value;
-				editor.style.fontWeight = 'bold';
-
-				if (is_allow_move_editor) {
-					const { x, y } = get_position(canvas, e.clientX, e.clientY);
-					if (x < 0 || y < 0 || x > canvas.width || y > canvas.height) {
-						return;
-					}
-
-					editor.style.left = `${e.clientX - 20}px`;
-					editor.style.top = `${e.clientY - 20}px`;
-
-				}
-			}
-
-			editor.onmousedown = function (e) {
-				is_allow_move_editor = true;
-			}
-
-			editor.onmouseup = function (e) {
-				is_allow_move_editor = false;
-			}
-
-			document.getElementById('update-text').onclick = function () {
-				if (!editor.value.length) {
-					alert('请先输入文字');
-					return;
-				}
-				editor.style.display = 'none';
-				ctx.beginPath();
-				ctx.font = `bold ${paint_size.value * 10}px ${font.value}`;
-				ctx.fillStyle = paint_color.value;
-				const { x, y } = get_position(canvas, parseInt(editor.style.left), parseInt(editor.style.top) + paint_size.value * 10);
-
-				ctx.fillText(editor.value, x, y);
-			}
-
-			image_mode.onchange = function (e) {
-				if (image_mode.value === 'font') {
-					document.getElementById('update-text').style.display = 'inline-block';
-					document.getElementById('font').style.display = 'inline-block';
-
-					editor.style.display = 'block';
-					editor.style.left = `${e.clientX}px`;
-					editor.style.top = `${e.clientY}px`;
-					return;
-				}
-				document.getElementById('update-text').style.display = 'none';
-				document.getElementById('font').style.display = 'none';
-				editor.style.display = 'none';
-			}
-
-			paint_size.onchange = function () {
-				if (image_mode.value === 'font') {
-					editor.style.fontSize = `${paint_size.value * 10}px`;
-				}
-			}
-
-			paint_color.onchange = function () {
-				if (image_mode.value === 'font') {
-					editor.style.color = paint_color.value;
-				}
-			}
-
-			font.onchange = function () {
-				if (image_mode.value === 'font') {
-					editor.style.fontFamily = font.value;
-				}
-			}
-
-			canvas.onmousedown = function (e) {
-				let ele = get_position(canvas, e.clientX, e.clientY)
-				let { x, y } = ele
-
-				switch (image_mode.value) {
-					case 'paint':
-						is_allow_drawing = true;
-						ctx.beginPath();
-						ctx.moveTo(x, y);
-						break;
-					case 'font':
-						editor.style.display = 'block';
-						editor.style.left = `${e.clientX}px`;
-						editor.style.top = `${e.clientY}px`;
-						editor.style.fontSize = `${paint_size.value * 10}px`;
-						editor.style.color = paint_color.value;
-						editor.style.fontFamily = font.value;
-						editor.style.fontWeight = 'bold';
-
-						break
-					default:
-						break;
-				}
-			};
-
-			canvas.onmousemove = (e) => {
-				let ele = get_position(canvas, e.clientX, e.clientY)
-				let { x, y } = ele;
-				switch (image_mode.value) {
-					case 'paint':
-						if (is_allow_drawing) {
-							ctx.lineWidth = paint_size.value;
-							ctx.strokeStyle = paint_color.value;
-							ctx.lineTo(x, y);
-							ctx.stroke();
-						}
-						break;
-					case 'font':
-						break;
-
-					default:
-						break;
-				}
-			}
-
-			canvas.onmouseup = function () {
-				switch (image_mode.value) {
-					case 'paint':
-						is_allow_drawing = false;
-						break;
-
-					case 'font':
-						editor.focus();
-						is_allow_move_editor = false;
-						break;
-
-					default:
-						break;
-				}
-			}
-
-			canvas.onmouseleave = function () {
-				if (image_mode.value === 'paint') {
-					is_allow_drawing = false;
-				}
-			}
 		}
 	</script>
-	<h2>电子价签蓝牙控制器<a style="margin-left: 130px;" href="uart_flasher.html">串口升级</a><a
-			href="ATC_TLSR_PaperBLEcontrol.html">蓝牙OTA升级</a>
-	</h2>
-
-
-	<button id="connectbutton" type="button" onclick="preConnect();">链接</button>
-	<button type="button" onclick="reConnect();">重新链接</button>
-	<button type="button" onclick="document.getElementById('log').innerHTML = '';">清空日志</button>
-	<br><br>
-
-	<h3>指令控制</h3>
-	<input type="text" id="cmdTXT" value="0055">
-	<button type="button" onclick="triggerEpdCmd(document.getElementById(&quot;cmdTXT&quot;).value);">发送指令</button>
-	<br>
-	<input type="text" id="cmdTXT2" value="FF">
-	<button type="button" onclick="triggerRxTxCmd(document.getElementById(&quot;cmdTXT2&quot;).value);">发送CMD指令</button>
-	<!-- 注册按钮 -->
-	<button class="register-btn" onclick="doRegister()">注册</button>
-	<!-- 时钟校准按钮 -->
-	<button class="calibrate-btn" onclick="doCalibrate()">时钟校准</button>
-	<br>
-    <button type="button" onclick="triggerRxTxCmd('e101')" title="点击该按钮, 切换为时钟模式">日历模式</button>
-	<button type="button" onclick="triggerRxTxCmd('e102')" title="点击该按钮, 切换为时钟模式">时钟模式</button>
-	<button type="button" onclick="triggerRxTxCmd('e100')" title="点击该按钮，然后上传图片。图片将永久显示到屏幕上">图片模式</button>
-	
-	<!-- <button type="button" onclick="clearScreen('00')">清屏全黑</button>
-	<button type="button" onclick="clearScreen('ff')">清屏全白</button>
-	<button type="button" onclick="triggerEpdCmd('0101')">刷新屏幕(图片模式全屏更新)</button>
-	<button type="button" onclick="triggerEpdCmd('0100')">刷新屏幕(图片模式局部更新)</button> -->
-	<br><br>
-
-	<h3>上传图片到屏幕</h3>
-	<input type="file" id="image_file" onchange="update_image()" accept=".png,.jpg,.bmp,.webp">
-	抖动算法：
-	<select id="dithering" title="抖动算法">
-		<optgroup label="黑白">
-			<option value="none">二值化</option>
-			<option value="bayer">bayer</option>
-			<option value="floydsteinberg">floydsteinberg</option>
-			<option value="Atkinson">Atkinson</option>
-		</optgroup>
-		<optgroup label="黑白红多色">
-			<option value="bwr_floydsteinberg">黑白红floydsteinberg</option>
-			<option value="bwr_Atkinson">黑白红Atkinson</option>
-		</optgroup>
-	</select>
-	阈值:
-	<input type="number" max="255" min="0" value="125" id="threshold">
-	<button onclick="update_image()">重新加载</button>
-	<br>
-
-	<div id="canvas-box">
-		<div id="tool-box">
-			模式：
-			<select id="canvas-mode">
-				<option value="paint">画笔</option>
-				<option value="font" title="输入完成后 点击：保存文本框">输入文字</option>
-			</select>
-			画笔/文字大小：
-			<input type="number" max="13" min="1" step="1" value="3" id="paint-size">
-			画笔颜色：
-			<select id="paint-color">
-				<option value="red">红色</option>
-				<option value="white">白色</option>
-				<option value="black">黑色</option>
-			</select>
-			画布尺寸：
-			<select id="canvas-size">
-				<option value="212x104">2.13(212x104)</option>
-				<option value="250x128">2.13(250x128)</option>
-				<option value="296x128">2.9(296x128)</option>
-				<option value="296x152">2.66(296x152)</option>
-				<option value="384x184">3.5(384x184)</option>				
-				<option value="300x400">4.2(300x400)</option>
-				<option value="480x648">5.83(480x648)</option>
-				<option value="384x648">7.5(384x648)</option>
-				<option value="480x800">7.5(480x800)</option>	
-				<option value="528x880">7.5(528x880)</option>								
-
-				<option value="296x128" selected>2.9(296x128)</option>
-			</select>
-
-			<select id="font" title="字体" style="display: none;">
-				<option value="微软雅黑">微软雅黑</option>
-				<option value="黑体">黑体</option>
-				<option value="仿宋">仿宋</option>
-				<option value="宋体">宋体</option>
-				<option value="楷体_GB2312">楷体_GB2312</option>
-				<option value="华文行楷">华文行楷</option>
-			</select>
-			<button id="update-text" style="display: none">保存文本框</button>
-			<button onclick="clear_canvas()">清屏</button>
-		</div>
-		<input id="edit-font"
-			style="max-width: 296px; position: absolute; border: black solid 1px;background-color: rgba(0,0,0,0);display: none;overflow: auto" />
-		<canvas id="canvas" width="296" height="152" style="border: black solid 1px;"></canvas>
-	</div>
-	<br>
-	<button id="upload-screen-button" onclick="upload_image()"
-		style="display:block; font-weight:bold; margin-top:10px;">立即上传到屏幕</button>
-	<br>
-
-	<br>
-	<h3>设置时间</h3>
-	<button id="time-setter" onclick="setTime()">设置时间为: </button> <br>
-	偏移+<input type="number" max="24" min="0" id="hour-offset" value="0" style="width: 40px;">小时
-	<br><br>
-
-	<!-- 自定义时间设置区域 -->
-	<div
-		style="border: 1px solid #FF9800; border-radius: 4px; padding: 10px; margin: 5px 0; background-color: #fff8e1;">
-		<span style="font-weight: bold; color: #e65100;">🕐 自定义时间设置</span>
-		<div class="time-input-group">
-			<input type="datetime-local" id="custom-datetime"
-				style="padding: 4px 8px; border: 1px solid #ccc; border-radius: 4px;">
-			<button class="custom-time-btn" onclick="setCustomTime()">发送自定义时间</button>
-			<button onclick="document.getElementById('custom-datetime').value = '';"
-				style="padding: 4px 8px;">清空</button>
-			<button
-				onclick="(() => { const now = new Date(); const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000); document.getElementById('custom-datetime').value = local.toISOString().slice(0, 16); })();"
-				style="padding: 4px 8px;">设为当前</button>
-		</div>
-		<small style="color: #888;">格式: YYYY-MM-DDTHH:MM (例如: 2026-07-19T14:30)</small>
-	</div>
-
-	<div id="log-box" style="position: absolute; right: 10px; top: 0px; width: 500px;height:50%;">
-		日志：
-		<br>
-		<div id="log" style="width: 80%; height: 80%; overflow: scroll; border: solid 1px; padding: 20px;">
-
-		</div>
-	</div>
+	<script type="application/javascript" src="js/image-editor.js"></script>
+	<script type="application/javascript" src="js/calendar.js"></script>
 </body>
 
 </html>
