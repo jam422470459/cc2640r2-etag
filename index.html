@@ -2,6 +2,7 @@
 
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body > div {
       padding: 12px;
@@ -37,6 +38,10 @@
     --ui-radius-size: 18px;
     --ui-radius-inner-size: 14px;
     --glass-blur-size: 24px;
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
 }
 
 button {
@@ -705,12 +710,134 @@ canvas.text-placement-mode {
 
 @media (max-width: 900px) {
     .calendar-style-workspace {
-        grid-template-columns: 1fr;
+        grid-template-columns: minmax(0, 1fr);
     }
 
     .calendar-style-controls {
         display: flex;
         flex-direction: column;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .calendar-style-preview-wrap {
+        min-width: 0;
+    }
+
+    .calendar-style-preview-frame {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    #calendarStylePreview {
+        max-width: 100%;
+    }
+
+    .calendar-style-grid,
+    .calendar-advanced-grid,
+    .calendar-size-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .calendar-size-control {
+        grid-template-columns: minmax(64px, auto) minmax(0, 1fr) 40px;
+    }
+}
+
+/* ===== 手机适配 ===== */
+@media (max-width: 767px) {
+    body > div {
+        padding: 10px;
+    }
+
+    /* 触控热区不小于 44px */
+    button,
+    input::file-selector-button {
+        min-height: 44px;
+        font-size: 15px;
+    }
+
+    /* 输入控件不小于 16px，避免 iOS 聚焦自动缩放 */
+    input[type=text],
+    input[type=number],
+    textarea,
+    select {
+        min-height: 44px;
+        font-size: 16px;
+    }
+    input[type=file] {
+        font-size: 16px;
+    }
+
+    /* 滑块自适应可用宽度 */
+    input[type=range] {
+        width: 100%;
+        min-width: 140px;
+        flex: 1 1 auto;
+    }
+    .dither-adjust-row input[type=range] {
+        width: 100%;
+        min-width: 130px;
+    }
+
+    /* 抖动调整区：允许换行、两两并排 */
+    .dither-adjust-row .flex-group {
+        flex: 1 1 46%;
+        min-width: 0;
+        flex-wrap: wrap;
+        row-gap: 6px;
+    }
+
+    /* 工具栏按钮换行 */
+    #tool-box {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* 模式 / 图片操作按钮群换行（排除画布容器） */
+    #etagFn > div:not(#canvas-box) {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* 容器内边距收紧 */
+    .canvas-container {
+        padding: 10px;
+    }
+    #canvas-box {
+        padding: 8px 0;
+    }
+    .flex-container,
+    .flex-group {
+        gap: 8px;
+    }
+
+    /* 画布操作按钮保持 44px 热区 */
+    .image-send-actions .tool-button {
+        width: 44px;
+        height: 44px;
+        min-height: 44px;
+    }
+
+    /* 日志区 */
+    #log {
+        font-size: 12px;
+        min-height: 80px;
+    }
+
+    /* 标签允许换行，避免长标签溢出 */
+    .canvas-container .dither-adjust-row label,
+    .file-picker-row label {
+        white-space: normal;
+    }
+
+    /* 日历复选框热区 */
+    .calendar-style-check {
+        min-height: 44px;
     }
 }
 
