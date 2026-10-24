@@ -625,8 +625,18 @@ label {
     input[type=number],
     input[type=datetime-local],
     input[type=date],
-    select {
+    select,
+    textarea {
         max-width: 100%;
+        min-height: 44px;
+        font-size: 16px;
+    }
+
+    button,
+    input[type=button],
+    input::file-selector-button {
+        min-height: 44px;
+        font-size: 15px;
     }
 
     #cmdTXT,
