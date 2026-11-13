@@ -35,7 +35,6 @@
 		</div>
 	</div>
 	<div class="main">
-		<h3>电子价签蓝牙控制器</h3>
 
 		<fieldset id="bluetooth-panel">
 			<legend>蓝牙连接</legend>
@@ -81,6 +80,11 @@
 						title="点击该按钮，然后上传图片。图片将永久显示到屏幕上">图片模式</button>
 					<button id="calendarToggle" type="button" class="secondary" aria-expanded="false"
 						aria-controls="calendar-panel" title="生成可上传的日历图片">日历图</button>
+					<button id="time-setter" type="button" class="primary" onclick="setTime()"
+						title="把当前时间（含偏移）同步到价签">设置时间为: </button>
+					<label for="hour-offset">偏移 +</label>
+					<input type="number" max="24" min="0" id="hour-offset" value="0" style="width: 72px;">
+					<span class="hint">小时</span>
 				</div>
 			</div>
 		</fieldset>
@@ -415,16 +419,6 @@
 
 		<fieldset id="time-panel">
 			<legend>设置时间</legend>
-			<div class="flex-container">
-				<div class="flex-group">
-					<button id="time-setter" type="button" class="primary" onclick="setTime()">设置时间为: </button>
-				</div>
-				<div class="flex-group">
-					<label for="hour-offset">偏移 +</label>
-					<input type="number" max="24" min="0" id="hour-offset" value="0" style="width: 72px;">
-					<span class="hint">小时</span>
-				</div>
-			</div>
 			<div class="soft-panel">
 				<div class="soft-panel-title">🕐 自定义时间设置</div>
 				<div class="time-input-group">
